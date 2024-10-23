@@ -161,3 +161,7 @@ cython_debug/
 #.idea/
 *.mat
 *.Identifier
+
+Kaggle.json
+clips.tar.gz
+seizure-detection.zip
