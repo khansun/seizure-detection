@@ -165,3 +165,7 @@ cython_debug/
 Kaggle.json
 clips.tar.gz
 seizure-detection.zip
+Patient_2_features.csv
+Patient_2_upenn_baseline.csv
+Patient_2_upenn_seizure.csv
+notebook/Patient_2_features.csv
