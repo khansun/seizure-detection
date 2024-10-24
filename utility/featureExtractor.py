@@ -812,5 +812,49 @@ def welchPowerMeasure(dataFrame, sampleRate):
 
     return welch_df
 
+
+def cumulateBandPower(data, fs):
+    """
+    Calculate the cumulative power in specified EEG frequency bands for each channel.
+
+    Parameters:
+    - data: pd.DataFrame
+        A DataFrame where each column represents an EEG channel.
+    - fs: float
+        The sampling frequency of the EEG data.
+
+    Returns:
+    - pd.DataFrame
+        A DataFrame where each row represents the cumulative power for each frequency band 
+        corresponding to the channels in the input data.
+        The columns are named in the format '{channel}_{band}', where 'band' is one of 
+        'power_delta', 'power_theta', 'power_alpha', 'power_beta', 'power_gamma'.
+    """
+    bands = {
+        'power_delta': (0.5, 4),
+        'power_theta': (4, 8),
+        'power_alpha': (8, 13),
+        'power_beta': (13, 30),
+        'power_gamma': (30, 100)
+    }
+    
+    band_powers = {f"{col}_{band}": [] for col in data.columns for band in bands}
+    nperseg = min(fs, len(data))  # Ensure nperseg does not exceed the input length
+
+    # Iterate over each column (EEG channel)
+    for col in data.columns:
+        freqs, psd = welch(data[col], fs, nperseg=nperseg)  # Use the adjusted nperseg
+        for band, (low, high) in bands.items():
+            # Extract the power in the frequency band
+            band_power = np.trapz(
+                psd[(freqs >= low) & (freqs < high)], 
+                freqs[(freqs >= low) & (freqs < high)]
+            )
+            band_powers[f"{col}_{band}"].append(band_power)
+
+    # Combine into a DataFrame with each column representing a band power for a channel
+    band_power_df = pd.DataFrame(band_powers)
+    return band_power_df
+
 if __name__ == "__main__":
     print("featureExtractor")    
