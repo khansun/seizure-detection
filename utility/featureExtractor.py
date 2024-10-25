@@ -9,8 +9,10 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from scipy import stats
 from itertools import combinations
 from numpy import inf
-import math
+import math, os, glob, re, tables
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
+from utility.preProcessor import  mat_to_df
 
 def window(a, w, o, copy = False):
     # if there is no window to be applied
@@ -715,6 +717,80 @@ class Seizure_Features(BaseEstimator, TransformerMixin):
         else:
             return feature_set
 
+def exportFeatureDump(UPENN_SAVE_PATH, UPENN_DIR, part_id): 
+    if os.path.exists(UPENN_SAVE_PATH):
+        os.remove(UPENN_SAVE_PATH)
+    part_file_list = file_list(os.path.join(UPENN_DIR, '*'), output=False)
+    for file in tqdm(part_file_list, desc=f'{part_id} Files'):
+        df, freq = mat_to_df(file)
+        class_name = file_class(file)
+    
+        feat = Seizure_Features(sf=freq,
+                                window_size=None,
+                                bandpasses=[[2, 4], [4, 8], [8, 12], [12, 30], [30, 70]],
+                                feature_list=['power', 'power_ratio', 'mean', 'mean_abs',
+                                              'std', 'ratio', 'LSWT', 'fft_corr', 'fft_eigen',
+                                              'time_corr', 'time_eigen'])
+    
+        part_x_feat = feat.transform(df.values, channel_names_list=list(df.columns))
+        part_x_feat = pd.DataFrame(part_x_feat, columns=feat.feature_names)
+    
+        part_y_feat = np.expand_dims(np.array([class_name]), axis=1)
+    
+        writeDumpFile(UPENN_SAVE_PATH, part_id, part_x_feat, part_y_feat)
+
+def writeDumpFile(save_dir, part_id, combined_df, condition):
+    h5file = tables.open_file(save_dir, mode="a", title="Patient 2 Features")
+
+    if "/" + part_id in h5file:
+        part_x_array = h5file.get_node("/" + part_id + '/Data_x')
+        part_y_array = h5file.get_node("/" + part_id + '/Data_y')
+
+        data_x_labels = h5file.get_node('/' + part_id + '/Data_x_Feat_Names')
+        combined_df = combined_df.reindex(data_x_labels[:].astype(str), axis=1)
+
+    else:
+        part_group = h5file.create_group("/", part_id, 'Participant Data')
+        x_atom = tables.Atom.from_dtype(combined_df.values.dtype)
+        y_atom = tables.Atom.from_dtype(condition.dtype)
+
+        part_x_array = h5file.create_earray("/" + part_id, 'Data_x', x_atom, (0, combined_df.shape[1]), 'Feature Array')
+        part_y_array = h5file.create_earray("/" + part_id, 'Data_y', y_atom, (0, 1), 'Events Array')
+
+        h5file.create_array("/" + part_id, 'Data_x_Feat_Names', np.array(combined_df.columns, dtype='unicode'), "Names of Each Feature")
+
+    part_x_array.append(combined_df.values)
+    part_y_array.append(condition)
+
+    h5file.flush()
+    h5file.close()
+
+
+def file_list(folder_path, output=False):
+    # create an empty list
+    file_list = []
+    # for file name in the folder path...
+    for filename in glob.glob(folder_path):
+        # ... append it to the list
+        file_list.append(filename)
+
+    # sort alphabetically
+    file_list.sort()
+
+    # Output
+    if output:
+        print(str(len(file_list)) + " files found")
+        pp.pprint(file_list)
+
+    return file_list
+    
+def file_class(file_name):
+    if re.findall('interictal', file_name):
+        return 0
+    elif re.findall('ictal', file_name):
+        return 1
+    else:
+        return 2
 
 def welchBandpower(data, sf, band, display_output=False):
     """
