@@ -1,0 +1,6 @@
+// Test Graph
+digraph {
+	A [label="Node A"]
+	B [label="Node B"]
+	A -> B [label="A to B"]
+}
