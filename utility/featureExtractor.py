@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.signal import tukey, welch
+from scipy.signal import welch
 from pywt import wavedec, swt
 import scipy
 import sklearn
