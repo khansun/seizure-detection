@@ -172,3 +172,5 @@ notebook/Patient_2_features.csv
 *.h5
 *.edf*
 *.csv
+*.txt
+*.TXT
