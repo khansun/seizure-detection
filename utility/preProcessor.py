@@ -6,6 +6,143 @@ import os
 import matplotlib.pyplot as plt
 import mne 
 from termcolor import colored
+import re
+import warnings
+import pyedflib
+from scipy import signal
+
+def chb_mit_load_edf(filename, selected_channels=[]):
+    try:
+
+        f = pyedflib.EdfReader(filename)
+        # os.remove(filename)
+
+        if len(selected_channels) == 0:
+            selected_channels = f.getSignalLabels()
+
+        channel_names = f.getSignalLabels()
+        channel_freq = f.getSampleFrequencies()
+
+        sigbufs = np.zeros((f.getNSamples()[0], len(selected_channels)))
+        for i, channel in enumerate(selected_channels):
+            sigbufs[:, i] = f.readSignal(channel_names.index(channel))
+
+        df = pd.DataFrame(sigbufs, columns=selected_channels).astype('float32')
+        index_increase = np.linspace(0, len(df) / channel_freq[0], len(df), endpoint=False)
+        seconds = np.floor(index_increase).astype('uint16')
+        df['Time'] = seconds
+        df = df.set_index('Time')
+        df.columns.name = 'Channel'
+
+        return df, channel_freq[0]
+
+    except OSError as e:
+        print(f"Error loading EDF file {file}: {e}")
+        return pd.DataFrame(), None
+
+        
+def chb_mit_parse_summary(file_path):
+    with open(file_path, "r") as file:
+        lines = file.readlines()
+
+    file_names = []
+    start_times = []
+    end_times = []
+    num_seizures = []
+    seizure_start_times = []
+    seizure_end_times = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        if line.startswith("File Name:"):
+            file_name = line.split(":")[1].strip()
+            file_names.append(file_name)
+
+            i += 1
+            start_time = lines[i].split(":")[1].strip()
+            start_times.append(start_time)
+
+            i += 1
+            end_time = lines[i].split(":")[1].strip()
+            end_times.append(end_time)
+
+            i += 1
+            try:
+                seizures = int(''.join(filter(str.isdigit, lines[i].split(":")[1].strip())))
+            except ValueError:
+                seizures = 0  # Default to zero if parsing fails
+            num_seizures.append(seizures)
+
+
+            if seizures > 0:
+                i += 1
+                start_seizure = int(lines[i].split(":")[1].strip().replace(" seconds", ""))
+                seizure_start_times.append(start_seizure)
+
+                i += 1
+                end_seizure = int(lines[i].split(":")[1].strip().replace(" seconds", ""))
+                seizure_end_times.append(end_seizure)
+            else:
+                seizure_start_times.append(None)
+                seizure_end_times.append(None)
+        i += 1
+
+    df = pd.DataFrame({
+        'File Name': file_names,
+        'Start Time': start_times,
+        'End Time': end_times,
+        'Number of Seizures': num_seizures,
+        'Seizure Start Time': seizure_start_times,
+        'Seizure End Time': seizure_end_times
+    })
+    return df
+
+
+
+def chb_mit_add_class_column(summaryRow, csv_path):
+    
+    try:
+        # Read the CSV file into a DataFrame
+        data = pd.read_csv(csv_path)
+
+        # Create a mask for times within the seizure window
+        time_within_seizure = (
+            (data['Time'] >= summaryRow['Seizure Start Time']) & 
+            (data['Time'] <= summaryRow['Seizure End Time'])
+        )
+        
+        # Assign the 'Class' column based on the mask
+        data['Class'] = time_within_seizure.astype(int)  # 1 for within seizure, 0 otherwise
+        data.to_csv(re.sub(".csv", "_classed.csv", csv_path))
+        return data
+
+    except FileNotFoundError:
+        print(f"File not found: {csv_path}")
+        return pd.DataFrame()  # Return an empty DataFrame if file is not found
+
+
+def chb_mit_edf_to_csv(data_path):
+    for part_file in os.listdir(data_path):
+        try:
+            file_path = data_path+"/"+part_file      
+            df, freq = chb_mit_load_edf(file_path)
+            df.to_csv(re.sub(".edf", ".csv", file_path))
+            print(f"file processed: {part_file} frequency: {freq}")
+        except Exception:
+            print (f"error {Exception} ")
+
+def chb_mit_add_class_to_csv(data_dir, summaryDf):
+    for index, row in summaryDf.iterrows():
+        try:
+            file_name = re.sub(".edf", ".csv", row['File Name'])
+            csv_path = f"{data_dir}/{file_name}"
+            if os.path.exists(csv_path):
+                df = chb_mit_add_class_column(row, csv_path)
+                print(f"Processed Row {index}: {file_name}" )
+        except Exception as e:
+            print (f" chb_mit_add_class_to_csv error {str(e)} {file_name}")
 
 # Plot learning curves
 def plot_learning_curves(history):
