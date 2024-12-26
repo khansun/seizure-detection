@@ -10,6 +10,7 @@ import re
 import warnings
 import pyedflib
 from scipy import signal
+from sklearn.metrics import classification_report, roc_curve, auc
 
 def chb_mit_load_edf(filename, selected_channels=[]):
     try:
@@ -172,7 +173,31 @@ def plot_learning_curves(history):
     plt.tight_layout()
     plt.show()
 
+def plot_roc_curves(dnn_model, models, X_test, y_test):
+    plt.figure(figsize=(10, 8))
+    
+    # DNN model predictions for ROC
+    dnn_pred_prob = dnn_model.predict(X_test).ravel()  # Get probabilities for the DNN model
+    fpr, tpr, _ = roc_curve(y_test, dnn_pred_prob)
+    roc_auc = auc(fpr, tpr)
+    plt.plot(fpr, tpr, label='DNN (AUC = {:.2f})'.format(roc_auc))
 
+    if models:
+        for name, model in models.items():
+            y_pred_prob = model.predict_proba(X_test)[:, 1]  # Get probabilities for the positive class
+            fpr, tpr, _ = roc_curve(y_test, y_pred_prob)
+            roc_auc = auc(fpr, tpr)
+            plt.plot(fpr, tpr, label='{} (AUC = {:.2f})'.format(name, roc_auc))
+            
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curves')
+    plt.legend(loc="lower right")
+    plt.show()
+    
 def mat_to_df(file_path, output=False):
     """
     Converts a MATLAB .mat file to a pandas DataFrame.
@@ -323,4 +348,15 @@ def plotDataFrame(upenn_baseline_df, upenn_seizure_df,upenn_baseline_freq, upenn
     print()
     print(colored('Ictal', 'white', 'on_grey', attrs=['bold', 'underline'])) # Use colored function from termcolor
     upenn_seizure_mne = mne_object(upenn_seizure_df, upenn_seizure_freq)
-    upenn_seizure_mne.plot(**plot_kwargs)
+    upenn_seizure_mne.plot(**plot_kwargs)\
+
+def plotDataFrameMean(dataFrame):
+
+    # Bar chart
+    plt.figure(figsize=(400, 100))
+    dataFrame.mean().plot(kind='bar', color='skyblue')
+    plt.xlabel("Columns")
+    plt.ylabel("Mean Value")
+    plt.title("Mean Value of Selected EEG Features")
+    plt.xticks(rotation=45)
+    plt.show()
