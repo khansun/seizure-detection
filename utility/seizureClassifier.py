@@ -6,6 +6,9 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from lime.lime_tabular import LimeTabularExplainer
 from sklearn.metrics import classification_report
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
 
 CONFIG = {
     "test_size": 0.1,
@@ -51,7 +54,6 @@ def create_dnn_model(input_shape, config=CONFIG):
     model.compile(optimizer=config["dnn_optimizer"], loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
-
 def train_and_evaluate_dnn(X_train, y_train, X_val, y_val, X_test, y_test, config=CONFIG):
     model = create_dnn_model(X_train.shape[1], config=config)
     history = model.fit(
@@ -63,32 +65,34 @@ def train_and_evaluate_dnn(X_train, y_train, X_val, y_val, X_test, y_test, confi
     )
 
     test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
-    print(f"Test Accuracy: {test_accuracy:.2f}")
+    print(f"DNN Test Accuracy: {test_accuracy:.2f}")
 
     y_pred = (model.predict(X_test) > 0.5).astype("int32")
-    print("\nClassification Report:\n")
+    print("\nDNN Classification Report:\n")
     print(classification_report(y_test, y_pred))
 
     return model, history
 
+def train_and_evaluate_ml_models(X_train, y_train, X_test, y_test):
+    models = {
+        "Random Forest": RandomForestClassifier(random_state=CONFIG["random_state"]),
+        "SVM": SVC(probability=True, random_state=CONFIG["random_state"]),
+        "Logistic Regression": LogisticRegression(random_state=CONFIG["random_state"])
+    }
 
+    trained_models = {}
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        print(f"\n{name} Classification Report:\n")
+        print(classification_report(y_test, y_pred))
+        trained_models[name] = model
 
-def explain_dnn_with_lime(dnn_model, X_train, X_test, feature_names, class_names):
-    """
-    Explains a prediction from a DNN model using LIME.
+    return trained_models
 
-    Parameters:
-        dnn_model: Trained DNN model.
-        X_train: Training data used to initialize LIME.
-        X_test: Test data to explain.
-        feature_names: List of feature names.
-        class_names: List of class names.
-
-    Returns:
-        None. Displays explanation in the notebook.
-    """
+def explain_model_with_lime(model, X_train, X_test, feature_names, class_names, model_name):
     explainer = LimeTabularExplainer(
-        training_data=X_train.values if hasattr(X_train, "values") else X_train,  # Ensure compatibility with pandas DataFrame
+        training_data=X_train,
         feature_names=feature_names,
         class_names=class_names,
         mode='classification',
@@ -96,13 +100,16 @@ def explain_dnn_with_lime(dnn_model, X_train, X_test, feature_names, class_names
     )
 
     instance_idx = np.random.randint(0, X_test.shape[0])
-    instance = X_test.iloc[instance_idx] if hasattr(X_test, "iloc") else X_test[instance_idx]
+    instance = X_test[instance_idx]
 
     def predict_proba_fn(data):
-        probs = dnn_model.predict(data)
-        if probs.shape[1] == 1:  # If single-column probability output
-            probs = np.hstack([1 - probs, probs])  # Convert to two-class probabilities
-        return probs
+        if hasattr(model, 'predict_proba'):
+            return model.predict_proba(data)
+        else:
+            probs = model.predict(data)
+            if probs.shape[1] == 1:
+                probs = np.hstack([1 - probs, probs])
+            return probs
 
     try:
         explanation = explainer.explain_instance(
@@ -110,8 +117,7 @@ def explain_dnn_with_lime(dnn_model, X_train, X_test, feature_names, class_names
             predict_fn=predict_proba_fn,
             num_features=10
         )
+        print(f"\nLIME Explanation for {model_name}:\n")
         explanation.show_in_notebook(show_table=True, show_all=False)
     except Exception as e:
-        print(f"An error occurred during LIME explanation: {e}")
-
-
+        print(f"An error occurred during LIME explanation for {model_name}: {e}")
