@@ -9,6 +9,11 @@ from sklearn.metrics import classification_report
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
+from tensorflow.keras.utils import plot_model
+from sklearn.tree import export_graphviz
+from graphviz import Source
+from graphviz import Digraph
+import matplotlib.pyplot as plt
 
 CONFIG = {
     "test_size": 0.1,
@@ -70,7 +75,7 @@ def train_and_evaluate_dnn(X_train, y_train, X_val, y_val, X_test, y_test, confi
     y_pred = (model.predict(X_test) > 0.5).astype("int32")
     print("\nDNN Classification Report:\n")
     print(classification_report(y_test, y_pred))
-
+    visualize_dnn_with_graphviz(model, filename="./experiment/dnn_model_graphviz")
     return model, history
 
 def train_and_evaluate_ml_models(X_train, y_train, X_test, y_test):
@@ -88,9 +93,72 @@ def train_and_evaluate_ml_models(X_train, y_train, X_test, y_test):
         print(classification_report(y_test, y_pred))
         trained_models[name] = model
 
+        # Visualization for Random Forest
+        if name == "Random Forest" and hasattr(model, "estimators_"):
+            from sklearn.tree import export_graphviz
+            from graphviz import Source
+
+            tree = model.estimators_[0]  # Visualize the first tree
+            dot_data = export_graphviz(
+                tree,
+                out_file=None,
+                feature_names=[f"Feature {i}" for i in range(X_train.shape[1])],
+                class_names=["Class 0", "Class 1"],
+                filled=True,
+                rounded=True,
+                special_characters=True
+            )
+            graph = Source(dot_data)
+            graph.render("./experiment/random_forest_tree", format="png", cleanup=True)
+            print("Random Forest tree visualization saved as 'random_forest_tree.png'.")
+
+        # Conceptual visualization for SVM and Logistic Regression
+        if name in ["SVM", "Logistic Regression"]:
+            from graphviz import Source
+
+            dot_data = f"""
+            digraph G {{
+                rankdir=LR;
+                node [shape=box, style=filled, color=lightblue];
+                Input -> "{name} Model" -> Output;
+            }}
+            """
+            graph = Source(dot_data)
+            graph.render(f"experiment/{name.lower().replace(' ', '_')}_model", format="png", cleanup=True)
+            print(f"{name} conceptual visualization saved as '{name.lower().replace(' ', '_')}_model.png'.")
+
     return trained_models
 
+def visualize_dnn_with_graphviz(model, filename="dnn_model_graphviz"):
+    """Visualize the DNN model architecture using graphviz."""
+    from graphviz import Digraph
+
+    graph = Digraph(format="png", name=filename)
+    graph.attr(rankdir="LR", size="8,5")
+
+    # Add input layer
+    graph.node("Input", shape="circle", style="filled", color="lightblue", label="Input Layer")
+
+    # Add hidden layers
+    for i, units in enumerate(CONFIG["dnn_layers_units"]):
+        graph.node(f"Hidden_{i+1}", shape="circle", style="filled", color="lightgreen", label=f"Hidden Layer {i+1}\n({units} units)")
+        if i == 0:
+            graph.edge("Input", f"Hidden_{i+1}")
+        else:
+            graph.edge(f"Hidden_{i}", f"Hidden_{i+1}")
+
+    # Add output layer
+    graph.node("Output", shape="circle", style="filled", color="lightcoral", label="Output Layer\n(1 unit)")
+    graph.edge(f"Hidden_{len(CONFIG['dnn_layers_units'])}", "Output")
+
+    # Render the graph
+    graph.render(filename, cleanup=True)
+    print(f"DNN model architecture saved as '{filename}.png'")
+    
+
+
 def explain_model_with_lime(model, X_train, X_test, feature_names, class_names, model_name):
+    """Explain a model's predictions using LIME and visualize with graphviz."""
     explainer = LimeTabularExplainer(
         training_data=X_train,
         feature_names=feature_names,
@@ -99,6 +167,7 @@ def explain_model_with_lime(model, X_train, X_test, feature_names, class_names, 
         discretize_continuous=True
     )
 
+    # Select a random instance from the test set
     instance_idx = np.random.randint(0, X_test.shape[0])
     instance = X_test[instance_idx]
 
@@ -112,12 +181,39 @@ def explain_model_with_lime(model, X_train, X_test, feature_names, class_names, 
             return probs
 
     try:
+        # Generate the explanation
         explanation = explainer.explain_instance(
             data_row=instance,
             predict_fn=predict_proba_fn,
             num_features=10
         )
+
+        # Print the explanation in the notebook
         print(f"\nLIME Explanation for {model_name}:\n")
         explanation.show_in_notebook(show_table=True, show_all=False)
+
+        # Plot the explanation
+        fig = explanation.as_pyplot_figure()
+        plt.title(f"LIME Explanation for {model_name}")
+        plt.tight_layout()
+        plt.show()
+
+        # Create a graphviz visualization
+        graph = Digraph(format="png", name=f"{model_name}_lime_explanation")
+        graph.attr(rankdir="LR", size="8,5")
+
+        # Add the prediction node
+        graph.node("Prediction", shape="ellipse", style="filled", color="lightblue", label=f"Prediction: {class_names[np.argmax(predict_proba_fn([instance]))]}")
+
+        # Add feature contributions
+        for feature, weight in explanation.as_list():
+            color = "lightgreen" if weight > 0 else "lightcoral"
+            graph.node(feature, shape="box", style="filled", color=color, label=f"{feature}\n({weight:.2f})")
+            graph.edge(feature, "Prediction")
+
+        # Render the graph
+        graph.render(f"experiment/{model_name.lower().replace(' ', '_')}_lime_explanation", cleanup=True)
+        print(f"LIME explanation visualization saved as '{model_name.lower().replace(' ', '_')}_lime_explanation.png'.")
+
     except Exception as e:
         print(f"An error occurred during LIME explanation for {model_name}: {e}")
